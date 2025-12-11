@@ -13,7 +13,7 @@ debug_log() {
 
 find_available_providers() {
 	local tools=()
-	for tool in ollama opencode copilot gemini; do
+	for tool in ollama opencode copilot gemini claude; do
 		if command -v "$tool" &>/dev/null; then
 			tools+=("$tool")
 		fi
@@ -35,7 +35,7 @@ list_models_for_provider() {
 		fi
 		;;
 	*)
-		# For providers like copilot/gemini that don't have model lists, output a default.
+		# For providers like copilot/gemini/claude that don't have model lists, output a default.
 		echo "(default)"
 		;;
 	esac
@@ -65,7 +65,7 @@ select_provider() {
 	done < <(find_available_providers)
 
 	if [ ${#tools[@]} -eq 0 ]; then
-		echo "Error: No AI CLI tools found (ollama, opencode, copilot, gemini)." >&2
+		echo "Error: No AI CLI tools found (ollama, opencode, copilot, gemini, claude)." >&2
 		exit 1
 	fi
 
@@ -184,6 +184,10 @@ run_ai_provider() {
 	"gemini")
 		debug_log "Running gemini..."
 		output=$(echo "$full_prompt" | gemini 2>"$stderr_capture") || true
+		;;
+	"claude")
+		debug_log "Running claude..."
+		output=$(claude -p "$full_prompt" 2>"$stderr_capture") || true
 		;;
 	*)
 		echo "Error: Unknown provider '$provider'" >&2
