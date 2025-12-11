@@ -57,12 +57,7 @@ LIST_MODELS_PROVIDER=""
 # 1. HELPER FUNCTIONS
 # ==========================================
 
-debug_log() {
-	if [ "$VERBOSE" = "true" ]; then
-		# Use >&2 to send debug messages to stderr
-		echo -e "\033[0;33m[DEBUG] $1\033[0m" >&2
-	fi
-}
+source "$(dirname "$0")/common.sh"
 
 usage() {
 	cat <<EOF
@@ -84,36 +79,6 @@ Options:
   -h, --help              Show this help message
 EOF
 	exit 0
-}
-
-find_available_providers() {
-	local tools=()
-	for tool in ollama opencode copilot gemini; do
-		if command -v "$tool" &>/dev/null; then
-			tools+=("$tool")
-		fi
-	done
-	printf "%s\n" "${tools[@]}"
-}
-
-list_models_for_provider() {
-	local provider="$1"
-	case $provider in
-	"ollama")
-		if command -v ollama &>/dev/null; then
-			ollama list | tail -n +2 | awk '{print $1}'
-		fi
-		;;
-	"opencode")
-		if command -v opencode &>/dev/null; then
-			opencode models
-		fi
-		;;
-	*)
-		# For providers like copilot/gemini that don't have model lists, output a default.
-		echo "(default)"
-		;;
-	esac
 }
 
 # ==========================================
@@ -155,23 +120,12 @@ parse_args() {
 			;;
 		-h | --help) usage ;;
 		*)
-			echo "Unknown parameter: $1"
+			echo "Unknown parameter: $1" >&2
 			usage
 			;;
 		esac
 		shift
 	done
-}
-
-load_config() {
-	local config_file="$HOME/.config/ai-commit/config.sh"
-	if [ -f "$config_file" ]; then
-		debug_log "Loading config from $config_file"
-		# shellcheck source=/dev/null
-		source "$config_file"
-	else
-		debug_log "No config file found at $config_file"
-	fi
 }
 
 # -- Content Preparation --
@@ -199,118 +153,8 @@ prepare_content() {
 	fi
 }
 
-# -- Provider & Model Selection --
-select_provider() {
-	if [ -n "$CLI_PROVIDER" ]; then
-		PROVIDER=$(echo "$CLI_PROVIDER" | tr '[:upper:]' '[:lower:]')
-		debug_log "Using provider from CLI: $PROVIDER"
-		return
-	fi
-
-	PROVIDER="$DEFAULT_PROVIDER"
-	if [ -n "$PROVIDER" ]; then
-		debug_log "Using default provider: $PROVIDER"
-		return
-	fi
-
-	local available_tools
-	available_tools=$(find_available_providers)
-	read -r -a tools <<<"$available_tools" # Read into array
-
-	if [ ${#tools[@]} -eq 0 ]; then
-		echo "Error: No AI CLI tools found (ollama, opencode, copilot, gemini)." >&2
-		exit 1
-	fi
-
-	if [ ${#tools[@]} -eq 1 ]; then
-		PROVIDER="${tools[0]}"
-		debug_log "Only one provider found, auto-selecting: $PROVIDER"
-		return
-	fi
-
-	if [ "$NON_INTERACTIVE_MODE" = "true" ]; then
-		echo "Error: Multiple AI providers found. Please specify one with '-p' in non-interactive mode." >&2
-		exit 1
-	fi
-
-	if command -v gum &>/dev/null; then
-		PROVIDER=$(printf "%s\n" "${tools[@]}" | gum choose --header "Select AI Provider")
-	elif command -v fzf &>/dev/null; then
-		PROVIDER=$(printf "%s\n" "${tools[@]}" | fzf --height=20% --layout=reverse --border --prompt="Select Provider > ")
-	else
-		echo "Multiple providers found. Please select one:" >&2
-		select opt in "${tools[@]}"; do
-			if [ -n "$opt" ]; then
-				PROVIDER=$opt
-				break
-			fi
-		done
-	fi
-
-	if [ -z "$PROVIDER" ]; then
-		echo "No provider selected." >&2
-		exit 1
-	fi
-}
-
-select_model() {
-	if [ -n "$CLI_MODEL" ]; then
-		MODEL="$CLI_MODEL"
-		debug_log "Using model from CLI: $MODEL"
-		return
-	fi
-
-	local model_list
-	case $PROVIDER in
-	"ollama")
-		MODEL="$DEFAULT_OLLAMA_MODEL"
-		debug_log "Attempting to find ollama models..."
-		if [ "$NON_INTERACTIVE_MODE" = "true" ]; then
-			if [ -z "$MODEL" ]; then
-				echo "Error: No Ollama model specified. Please use '-m' or set DEFAULT_OLLAMA_MODEL in non-interactive mode." >&2
-				exit 1
-			fi
-			return
-		fi
-		if command -v ollama &>/dev/null && model_list=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}'); then
-			if [ -n "$model_list" ]; then
-				if command -v gum &>/dev/null; then
-					MODEL=$(echo "$model_list" | gum filter --placeholder "Search ollama models..." --value "$MODEL")
-				elif command -v fzf &>/dev/null; then
-					MODEL=$(echo "$model_list" | fzf --height=40% --layout=reverse --prompt="Search ollama models > " --query "$MODEL")
-				fi
-			fi
-		fi
-		;;
-	"opencode")
-		MODEL="$DEFAULT_OPENCODE_MODEL"
-		debug_log "Attempting to find opencode models..."
-		if [ "$NON_INTERACTIVE_MODE" = "true" ]; then
-			if [ -z "$MODEL" ]; then
-				echo "Error: No OpenCode model specified. Please use '-m' or set DEFAULT_OPENCODE_MODEL in non-interactive mode." >&2
-				exit 1
-			fi
-			return
-		fi
-		if command -v opencode &>/dev/null && model_list=$(opencode models 2>/dev/null); then
-			if [ -n "$model_list" ]; then
-				if command -v gum &>/dev/null; then
-					MODEL=$(echo "$model_list" | gum filter --placeholder "Search opencode models..." --value "$MODEL")
-				elif command -v fzf &>/dev/null; then
-					MODEL=$(echo "$model_list" | fzf --height=40% --layout=reverse --prompt="Search opencode models > " --query "$MODEL")
-				fi
-			fi
-		fi
-		;;
-	*)
-		MODEL=""
-		debug_log "No model selection for provider '$PROVIDER'."
-		;;
-	esac
-}
-
 # -- Generation & Cleanup --
-generate() {
+generate_commit_message() {
 	debug_log "Provider: $PROVIDER"
 	debug_log "Model: ${MODEL:-Default}"
 
@@ -319,7 +163,6 @@ generate() {
 		cat <<EOF
 You are a git commit message generator.
 Follow the Conventional Commits specification.
-
 Format:
 <type>[optional scope]: <description>
 
@@ -327,10 +170,15 @@ Format:
 
 Rules:
 - Types: fix, feat, build, chore, ci, docs, style, refactor, perf, test.
-- Use present tense.
-- Max title length: 50 chars.
-- No markdown code blocks in output.
 - No conversational text.
+- Only respond with the commit message. Don't give any notes.
+- Explain what were the changes and why the changes were done.
+- Focus the most important changes.
+- Use the present tense.
+- Use a semantic commit prefix.
+- Hard wrap lines at 72 characters.
+- Ensure the title is only 50 characters.
+- IMPORTANT: Do not start any line with the hash symbol (#). It will be interpreted as a comment and ignored.
 EOF
 	)
 
@@ -342,71 +190,17 @@ EOF
 Files changed:
 $STAGED_FILES_CONTENT
 
-Diff:
+\`\`\`
 $DIFF_CONTENT
+\`\`\`
 EOF
 	)
 
 	trigger="Based on the diff above, generate the commit message now. Output raw text only."
 
-	full_prompt=$(printf "%s\n\n---\n\n%s\n\n---\n\n%s" "$rules" "$data" "$trigger")
+	full_prompt=$(printf "%s\n\n---\n\n%s\n%s" "$data" "$rules" "$trigger")
 
-	local stderr_capture
-	stderr_capture=$(mktemp)
-
-	# We redirect stderr to a file so we can show it on failure or in verbose mode.
-	case $PROVIDER in
-	"opencode")
-		local model_flag_array=()
-		if [ -n "$MODEL" ]; then model_flag_array=("-m" "$MODEL"); fi
-		debug_log "Running opencode agent 'commit'..."
-		COMMIT_MSG=$(opencode run --agent commit "${model_flag_array[@]}" "$data $trigger" 2>"$stderr_capture") || true
-		;;
-	"ollama")
-		debug_log "Running ollama with model '$MODEL'..."
-		debug_log "Sending $(echo "$full_prompt" | wc -c | awk '{$1=$1};1') chars to Ollama"
-		COMMIT_MSG=$(echo "$full_prompt" | ollama run "$MODEL" 2>"$stderr_capture") || true
-		;;
-	"copilot")
-		debug_log "Running copilot..."
-		COMMIT_MSG=$(copilot -s -p "$full_prompt" 2>"$stderr_capture") || true
-		;;
-	"gemini")
-		debug_log "Running gemini..."
-		COMMIT_MSG=$(gemini "$full_prompt" 2>"$stderr_capture") || true
-		;;
-	*)
-		echo "Error: Unknown provider '$PROVIDER'" >&2
-		exit 1
-		;;
-	esac
-
-	if [ "$VERBOSE" = "true" ] && [ -s "$stderr_capture" ]; then
-		debug_log "--- STDERR from $PROVIDER ---"
-		# Indent stderr for clarity
-		sed 's/^/    /' "$stderr_capture" >&2
-		debug_log "--------------------------"
-	fi
-
-	if [ -z "$COMMIT_MSG" ]; then
-		echo "Error: AI generation failed. No output received from '$PROVIDER'." >&2
-		if [ -s "$stderr_capture" ]; then
-			echo "--- Error Details from $PROVIDER ---" >&2
-			cat "$stderr_capture" >&2
-			echo "--------------------------------" >&2
-		fi
-		rm -f "$stderr_capture"
-		exit 1
-	fi
-	rm -f "$stderr_capture"
-}
-
-cleanup_message() {
-	# Remove conversational filler and code blocks
-	COMMIT_MSG=$(echo "$COMMIT_MSG" |
-		# sed -E 's/^(Sure, |Here is |Here\'s )//I' | # Remove conversational openings
-		sed -E '/^```.*$/d' | # Remove code block fences
-		awk 'NF {p=1} p')     # Trim leading/trailing newlines
+	run_ai_provider "$full_prompt" "$PROVIDER" "$MODEL" "COMMIT_MSG"
 }
 
 # ==========================================
@@ -436,8 +230,8 @@ main() {
 	prepare_content
 	select_provider
 	select_model
-	generate
-	cleanup_message
+	generate_commit_message
+	COMMIT_MSG=$(cleanup_message "$COMMIT_MSG")
 
 	if [ "$OUTPUT_FILE" != "/dev/stdout" ]; then
 		debug_log "Commit message written to $OUTPUT_FILE"

@@ -7,18 +7,18 @@ let
   ai-commit =
     let
       binName = "ai-commit";
-      src = ./ai-commit.sh;
+      src = ./.;
     in
     pkgs.runCommand binName
       {
-        # nativeBuildInputs = [ pkgs.makeWrapper ];
         meta = {
           mainProgram = binName;
         };
       }
       ''
         mkdir -p $out/bin
-        install -m +x ${src} $out/bin/${binName}
+        install -m +x ${src}/* $out/bin/
+        mv $out/bin/${binName}.sh $out/bin/${binName}
         chmod +x $out/bin/${binName}
       '';
 in
