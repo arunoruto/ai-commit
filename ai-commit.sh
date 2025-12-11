@@ -20,7 +20,7 @@ set -eo pipefail
 # -- Behavior Settings --
 BRIEF_MODE="false"
 EMOJI_MODE="false"
-DIFF_LIMIT=20000
+DIFF_LIMIT=0
 VERBOSE="false"
 
 # -- Files to Ignore (can be overridden by config) --
@@ -74,7 +74,7 @@ Options:
   -p, --provider <name>   Specify provider (ollama, opencode, copilot, gemini)
   -m, --model <name>      Specify model name (e.g., llama3, gpt-4)
   -o, --output <file>     Save message to a file instead of stdout
-  -l, --limit <num>       Set diff character limit (default: 20000)
+  -l, --limit <num>       Set diff character limit (default: 0 for unlimited)
   -b, --brief             Force short 1-sentence summary
   -e, --emoji             Enable GitMoji style
   -v, --verbose           Enable debug logs
@@ -193,7 +193,7 @@ prepare_content() {
 		exit 1
 	fi
 
-	if [ ${#DIFF_CONTENT} -gt "$DIFF_LIMIT" ]; then
+	if [ "$DIFF_LIMIT" -gt 0 ] && [ ${#DIFF_CONTENT} -gt "$DIFF_LIMIT" ]; then
 		DIFF_CONTENT="${DIFF_CONTENT:0:$DIFF_LIMIT} ... [Diff Truncated]"
 		debug_log "Diff was truncated to $DIFF_LIMIT chars."
 	fi
@@ -343,12 +343,7 @@ Files changed:
 $STAGED_FILES_CONTENT
 
 Diff:
-\
-$()$(
-			diff
-			$DIFF_CONTENT
-
-		)$()
+$DIFF_CONTENT
 EOF
 	)
 
