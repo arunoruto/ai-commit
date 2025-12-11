@@ -136,10 +136,15 @@ generate_release_notes() {
 	rules=$(
 		cat <<EOF
 You are a release notes generator for a git repository.
-Your task is to summarize a list of commit messages into a cohesive and well-formatted release notes document.
+Your task is to create a creative title and a summary for a new release based on a list of commit messages.
 
-Rules:
-- Group changes by their type. Use titles for sections, like "Features:", "Bug Fixes:", "Miscellaneous:". Do not use markdown headings.
+The output should be in two parts:
+1. A creative and concise title for the release on the first line.
+2. The body of the release notes, starting from the third line (leave a blank line after the title).
+
+Rules for the body:
+- Group changes by their type. Use titles for sections, like "Features:", "Bug Fixes:", "Miscellaneous:".
+- Do not use markdown headings.
 - IMPORTANT: Do not start any lines with the hash symbol (#).
 - Each item in the list should be a brief, clear summary of the change.
 - Omit the commit hashes from the output.
